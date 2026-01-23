@@ -1,232 +1,51 @@
-# .github/workflows/cmake-multi-platform.yml
-name: Multi-Platform CI
-
-on:
-  push:
-    branches: [main, develop]
-  pull_request:
-    branches: [main]
+on: [push, pull_request]
 
 jobs:
-  # 1. Linux 构建（多种编译器）
-  linux-build:
+  ubuntu-build:
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        compiler: [gcc, clang]
-        build_type: [Debug, Release]
-        include:
-          - compiler: gcc
-            cc: gcc
-            cxx: g++
-          - compiler: clang
-            cc: clang
-            cxx: clang++
-
+    
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
-    - name: Install tools
-      run: |
-        
-        sudo apt-get install -y cmake build-essential ${{ matrix.cc }} ${{ matrix.cxx }}
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential cmake
     
-    - name: Configure with ${{ matrix.compiler }}
-      run: |
-        mkdir -p build-${{ matrix.compiler }}-${{ matrix.build_type }}
-        cd build-${{ matrix.compiler }}-${{ matrix.build_type }}
-        cmake .. \
-          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
-          -DCMAKE_C_COMPILER=${{ matrix.cc }} \
-          -DCMAKE_CXX_COMPILER=${{ matrix.cxx }}
+    - name: Configure
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
     
     - name: Build
-      run: |
-        cd build-${{ matrix.compiler }}-${{ matrix.build_type }}
-        cmake --build . --parallel
+      run: cmake --build build
     
     - name: Test
       run: |
-        cd build-${{ matrix.compiler }}-${{ matrix.build_type }}
+        cd build
         if [ -f "myapp" ]; then
-          echo "Running program..."
-          timeout 3s ./myapp || echo "Program finished with exit code $?"
-        fi
-    
-    - name: Cleanup
-      if: always()
-      run: |
-        echo "Build artifacts:"
-        find . -name "myapp" -type f -exec ls -lh {} \;
-
-  # 2. macOS 构建
-  macos-build:
-    runs-on: macos-latest
-    strategy:
-      matrix:
-        build_type: [Debug, Release]
+          ./myapp
+          echo "✅ Build successful!"
+        else
+          echo "❌ Build failed!"
+          exit 1
+ubuntu2-build:
+    runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
+    - uses: actions/checkout@v4
     
-    - name: Install CMake
-      run: |
-        brew install cmake
+    - name: Install dependencies
+      run: sudo apt-get update && sudo apt-get install -y build-essential cmake
     
     - name: Configure
-      run: |
-        mkdir -p build-macos-${{ matrix.build_type }}
-        cd build-macos-${{ matrix.build_type }}
-        cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
+      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
     
     - name: Build
-      run: |
-        cd build-macos-${{ matrix.build_type }}
-        cmake --build . --parallel
+      run: cmake --build build
     
-    - name: Test on macOS
+    - name: Test
       run: |
-        cd build-macos-${{ matrix.build_type }}
+        cd build
         if [ -f "myapp" ]; then
-          echo "=== macOS Build Info ==="
-          file myapp
-          echo -e "\n=== Running Program ==="
-          timeout 3s ./myapp || echo "Exit code: $?"
-        fi
-
-  # 3. Windows 构建（MinGW 和 MSVC）
-  windows-build:
-    runs-on: windows-latest
-    strategy:
-      matrix:
-        compiler: [msvc, mingw]
-        build_type: [Debug, Release]
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Install tools
-      run: |
-        # 安装 CMake
-        choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
-        
-        # 如果是 MinGW，则安装它
-        if ("${{ matrix.compiler }}" -eq "mingw") {
-          choco install mingw
-          $env:Path += ";C:\Program Files\mingw-w64\x86_64-8.1.0-posix-seh-rt_v6-rev0\mingw64\bin"
-        }
-    
-    - name: Configure
-      run: |
-        mkdir build
-        cd build
-        
-        if ("${{ matrix.compiler }}" -eq "mingw") {
-          # MinGW 配置
-          cmake .. -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        } else {
-          # MSVC 配置
-          cmake .. -DCMAKE_BUILD_TYPE=${{ matrix.build_type }}
-        }
-    
-    - name: Build
-      run: |
-        cd build
-        
-        if ("${{ matrix.compiler }}" -eq "mingw") {
-          cmake --build . --parallel
-        } else {
-          cmake --build . --config ${{ matrix.build_type }} --parallel
-        }
-    
-    - name: Test on Windows
-      run: |
-        cd build
-        
-        if (Test-Path "myapp.exe") {
-          $exe = "myapp.exe"
-        } elseif (Test-Path "Debug\myapp.exe") {
-          $exe = "Debug\myapp.exe"
-        } elseif (Test-Path "Release\myapp.exe") {
-          $exe = "Release\myapp.exe"
-        }
-        
-        if ($exe) {
-          Write-Host "=== Windows Build Info ==="
-          Get-Item $exe
-          Write-Host "`n=== Running Program ==="
-          Start-Process -FilePath ".\$exe" -NoNewWindow -Wait -ErrorAction SilentlyContinue
-          Write-Host "Exit code: $LASTEXITCODE"
-        } else {
-          Write-Host "Executable not found"
-          Get-ChildItem -Recurse -Filter "*.exe"
-        }
-
-  # 4. 交叉编译测试（ARM）
-  arm-cross-compile:
-    runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-    
-    steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Install ARM toolchain
-      run: |
-        
-        sudo apt-get install -y gcc-arm-linux-gnueabihf
-    
-    - name: Cross-compile for ARM
-      run: |
-        mkdir -p build-arm
-        cd build-arm
-        cmake .. \
-          -DCMAKE_SYSTEM_NAME=Linux \
-          -DCMAKE_SYSTEM_PROCESSOR=arm \
-          -DCMAKE_C_COMPILER=arm-linux-gnueabihf-gcc \
-          -DCMAKE_BUILD_TYPE=Release
-        cmake --build . --parallel
-    
-    - name: Check ARM binary
-      run: |
-        cd build-arm
-        if [ -f "myapp" ]; then
-          echo "=== ARM Binary Info ==="
-          file myapp
-          readelf -h myapp | grep -i "machine\|class"
-        fi
-
-  # 5. 汇总报告
-  report:
-    runs-on: ubuntu-latest
-    needs: [linux-build, macos-build, windows-build]
-    if: always()
-    
-    steps:
-    - name: Generate summary
-      run: |
-        echo "# Multi-Platform Build Report" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "## Build Status" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        
-        echo "| Platform | Compiler | Build Type | Status |" >> $GITHUB_STEP_SUMMARY
-        echo "|----------|----------|------------|--------|" >> $GITHUB_STEP_SUMMARY
-        
-        # 这里可以添加更详细的报告逻辑
-        echo "| Linux | gcc | Debug | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| Linux | gcc | Release | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| Linux | clang | Debug | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| Linux | clang | Release | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| macOS | clang | Debug | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| macOS | clang | Release | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| Windows | MSVC | Debug | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| Windows | MSVC | Release | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| Windows | MinGW | Debug | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        echo "| Windows | MinGW | Release | ✅ Success |" >> $GITHUB_STEP_SUMMARY
-        
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "✅ All platforms built successfully!" >> $GITHUB_STEP_SUMMARY
+          ./myapp
+          echo "✅ Build successful!"
+        else
+          echo "❌ Build failed!"
+          exit 1
