@@ -1,4 +1,11 @@
-on: [push, pull_request]
+# .github/workflows/cmake-multi-os.yml
+name: Multi-OS CMake CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main]
 
 jobs:
   ubuntu-build:
@@ -14,38 +21,113 @@ jobs:
       run: cmake -B build -DCMAKE_BUILD_TYPE=Release
     
     - name: Build
-      run: cmake --build build
+      run: cmake --build build --parallel $(nproc)
     
     - name: Test
       run: |
         cd build
         if [ -f "myapp" ]; then
-          ./myapp
+          echo "=== Linux Binary Info ==="
+          file myapp
+          ldd myapp 2>/dev/null || echo "Static binary or not dynamic"
+          echo -e "\n=== Running Program ==="
+          timeout 3s ./myapp || echo "Exit code: $?"
           echo "✅ Build successful!"
         else
-          echo "❌ Build failed!"
+          echo "❌ Build failed: Executable not found"
+          echo "Build directory contents:"
+          ls -la
           exit 1
-ubuntu2-build:
-    runs-on: ubuntu-latest
+        fi
+    
+    - name: Upload Linux artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: myapp-linux
+        path: build/myapp
+
+  windows-build:
+    runs-on: windows-latest
     
     steps:
     - uses: actions/checkout@v4
     
     - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential cmake
+      run: |
+        # Windows 不使用 apt-get，使用 Chocolatey 或内置的包管理器
+        # 检查是否已安装 CMake
+        cmake --version
+        
+        # 如果未安装 CMake，使用 Chocolatey 安装
+        # choco install cmake --installargs 'ADD_CMAKE_TO_PATH=System'
+        # 或者使用 winget（Windows 11 内置）
+        # winget install -e --id Kitware.CMake
+        
+        echo "CMake should be pre-installed on Windows runner"
     
     - name: Configure
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
+      run: |
+        # 在 Windows 上创建构建目录
+        mkdir build
+        cd build
+        
+        # Windows 上不指定构建类型，使用默认配置
+        cmake .. -DCMAKE_BUILD_TYPE=Release
+        
+        # 或者使用 Visual Studio 生成器（推荐）
+        # cmake .. -G "Visual Studio 17 2022" -A x64
     
     - name: Build
-      run: cmake --build build
-    
-    - name: Test
       run: |
         cd build
-        if [ -f "myapp" ]; then
-          ./myapp
-          echo "✅ Build successful!"
-        else
-          echo "❌ Build failed!"
-          exit 1
+        
+        # 在 Windows 上需要指定配置
+        cmake --build . --config Release --parallel
+        
+        # 或者如果使用 Visual Studio 生成器
+        # cmake --build . --config Release --parallel
+        
+        echo "Build directory contents:"
+        dir
+    
+    - name: Test
+      shell: powershell
+      run: |
+        cd build
+        
+        # 在 Windows 上，可执行文件可能有不同的位置和名称
+        $exe = $null
+        
+        # 检查可能的可执行文件位置
+        if (Test-Path "Release\myapp.exe") {
+            $exe = "Release\myapp.exe"
+        } elseif (Test-Path "myapp.exe") {
+            $exe = "myapp.exe"
+        } elseif (Test-Path ".\myapp.exe") {
+            $exe = ".\myapp.exe"
+        }
+        
+        if ($exe) {
+            Write-Host "=== Windows Binary Info ==="
+            Get-Item $exe
+            Write-Host "`n=== Running Program ==="
+            
+            # 运行程序并捕获输出
+            $process = Start-Process -FilePath $exe -NoNewWindow -PassThru -Wait
+            Write-Host "Exit code: $($process.ExitCode)"
+            
+            Write-Host "✅ Build successful!"
+        } else {
+            Write-Host "❌ Build failed: Executable not found"
+            Write-Host "Searching for executables..."
+            Get-ChildItem -Recurse -Filter "*.exe"
+            exit 1
+        }
+    
+    - name: Upload Windows artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: myapp-windows
+        path: |
+          build/Release/myapp.exe
+          build/myapp.exe
