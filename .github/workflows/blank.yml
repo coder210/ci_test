@@ -1,31 +1,88 @@
-# .github/workflows/cmake-simple.yml
-name: Simple CMake CI
+# .github/workflows/cmake-cross-platform.yml
+name: CMake Cross-Platform
 
 on: [push, pull_request]
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-latest
-    
+    strategy:
+      matrix:
+        build_type: [Debug, Release, RelWithDebInfo, MinSizeRel]
+
     steps:
     - uses: actions/checkout@v4
-    
+
     - name: Install dependencies
-      run: sudo apt-get update && sudo apt-get install -y build-essential cmake
-    
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y \
+          build-essential \
+          cmake \
+          ninja-build \
+          pkg-config \
+          libssl-dev \
+          zlib1g-dev
+
     - name: Configure
-      run: cmake -B build -DCMAKE_BUILD_TYPE=Release
-    
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -DBUILD_SHARED_LIBS=ON \
+          -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+          -G Ninja
+
     - name: Build
-      run: cmake --build build
-    
+      run: |
+        cmake --build build --parallel $(nproc)
+
     - name: Test
       run: |
-        cd build
-        if [ -f "myapp" ]; then
-          ./myapp
-          echo "✅ Build successful!"
-        else
-          echo "❌ Build failed!"
-          exit 1
-        fi
+        cd build && ctest -C ${{ matrix.build_type }} --output-on-failure
+
+  build-macos:
+    runs-on: macos-latest
+    strategy:
+      matrix:
+        build_type: [Debug, Release]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Install dependencies
+      run: |
+        brew install cmake ninja pkg-config
+
+    - name: Configure
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -G Ninja
+
+    - name: Build
+      run: |
+        cmake --build build --parallel
+
+    - name: Test
+      run: |
+        cd build && ctest --output-on-failure
+
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        generator: ["Visual Studio 17 2022", "MinGW Makefiles"]
+        build_type: [Debug, Release]
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Configure
+      run: |
+        cmake -B build \
+          -DCMAKE_BUILD_TYPE=${{ matrix.build_type }} \
+          -G "${{ matrix.generator }}"
+
+    - name: Build
+      run: |
+        cmake --build build --config ${{ matrix.build_type }}
