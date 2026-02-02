@@ -149,7 +149,7 @@ set_property(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR} PROPERTY VS_STARTUP_PROJECT "
 # On macOS Platforms, ensure that the bundle is valid for distribution by calling fixup_bundle.
 # note that fixup_bundle does not work on iOS, so you will want to use static libraries 
 # or manually copy dylibs and set rpaths
-if(CMAKE_SYSTEM_NAME MATCHES "Darwin")
+if(CMAKE_SYSTEM_NAME MATCHES "Darwin" AND NOT CMAKE_GENERATOR MATCHES "Xcode")
     # tell Install about the target, otherwise fixup won't know about the transitive dependencies
     install(TARGETS ${EXECUTABLE_NAME}
     	BUNDLE DESTINATION ./install COMPONENT Runtime
