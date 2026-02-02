@@ -6,7 +6,6 @@ set(CMAKE_LIBRARY_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/$<CONFIGURATION>")
 # prevent installing to system directories. 
 set(CMAKE_INSTALL_PREFIX "${CMAKE_BINARY_DIR}" CACHE INTERNAL "")
 
-
 # Declare the project
 project(sdl-min)
 
@@ -61,12 +60,15 @@ if(EMSCRIPTEN)
 	set(CMAKE_EXECUTABLE_SUFFIX ".html" CACHE INTERNAL "")
 endif()
 
+# Configure SDL by calling its CMake file.
+# we use EXCLUDE_FROM_ALL so that its install targets and configs don't
+# pollute upwards into our configuration.
 add_subdirectory(SDL EXCLUDE_FROM_ALL)
 
 # Link SDL to our executable. This also makes its include directory available to us. 
-# # If using satelite libraries, SDL must be the last item in the list. 
-
-target_link_libraries(${EXECUTABLE_NAME} PUBLIC SDL3::SDL3)
+target_link_libraries(${EXECUTABLE_NAME} PUBLIC 
+    SDL3::SDL3
+)
 
 # Dealing with assets
 # We have some non-code resources that our application needs in order to work. How we deal with those differs per platform.
